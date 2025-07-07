@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+ <title>Fluke 📡</title>
+ <meta charset="utf-8">
+ <meta name="author" content="Andres Basile">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <script>
+var CONFIG = {
+ "timeout": 12000,
+ "source": {
+  "bb1": "blackbox1 - DEV",
+  "bb2": "blackbox2 - PROD"
+ },
+ "module": {
+  "tcp_connect": "TCP"
+ }
+};
+
+const LANG = {
+ "E": {
+  "502": "Falla en el origen.",
+  "503": "Limite de consultas alcanzado.",
+  "unknown": "Error desconocido."
+ },
+ "L": {
+  "source": "Origen",
+  "target": "Destino",
+  "module": "Modulo",
+  "start": "Comenzar Prueba",
+  "running": "corriendo",
+  "success": "correcto",
+  "fail": "fallo",
+  "error": "error"
+ },
+ "H": {
+  "source": "Tecla Ctrl para seleccionar varios.",
+  "target": "HOST:PUERTO, uno por linea.",
+  "module": "Tipo de conexion.",
+  "start": "Esperar al final para reusar la herramienta."
+ }
+};
+ </script>
+ <script>
+var PROCS = 0;
+
+function option(value, text) {
+ return `<option value="${value}">${text}</option>`;
+}
+
+function setup() {
+ const sources = document.getElementById("source");
+ for (const [value, text] of Object.entries(CONFIG['source'])) {
+  sources.insertAdjacentHTML('beforeend', option(value, text));
+ }
+ const modules = document.getElementById("module");
+ for (const [value, text] of Object.entries(CONFIG['module'])) {
+  modules.insertAdjacentHTML('beforeend', option(value, text));
+ }
+ for (const [value, text] of Object.entries(LANG['H'])) {
+  document.getElementById(value).title = text;
+ }
+ document.getElementById("start").innerText = "🕒 " + LANG['L']['start'];
+ document.getElementById("source").previousSibling.innerText = "🛰️ " + LANG['L']['source'];
+ document.getElementById("target").previousSibling.innerText = "💻 " + LANG['L']['target'];
+ document.getElementById("module").previousSibling.innerText = "⚙️ " + LANG['L']['module'];
+}
+
+function cell(icon, source, target, status, note) {
+ return `<div class="cell">${icon}
+</div><div class="cell">${source}
+</div><div class="cell">${target}
+</div><div class="cell">${status}
+</div><div class="cell">${note}
+</div>`;
+}
+
+function row(result, status, source, target, note) {
+ result.classList.add("row");
+ if (status == -2) {
+  result.innerHTML = cell("⚙️", source, target, "?", note);
+ }
+ else if (status == -1) {
+  result.innerHTML = cell("⚠️", source, target, LANG['L']['error'], note);
+  result.classList.add("error");
+ }
+ else if (status == 0) {
+  result.innerHTML = cell("🛑", source, target, LANG['L']['fail'], "");
+  result.classList.add("fail");
+ }
+ else {
+  result.innerHTML = cell("🟢", source, target, LANG['L']['success'], Math.round(note * 1000) + "ms");
+  result.classList.add("success");
+ }
+}
+
+async function probe(result, source, target, module) {
+ const cancel = new AbortController();
+ const timeout = setTimeout(() => cancel.abort(), CONFIG['timeout']);
+ fetch(source.value + '/probe?module=' + module + '&target=' + target, {signal: cancel.signal})
+  .then(reply => {
+   clearTimeout(timeout);
+   if (reply.ok) return reply.text();
+   else if (reply.status == 502) throw new Error(LANG['E']['502']);
+   else if (reply.status == 503) throw new Error(LANG['E']['503']);
+   else throw new Error(LANG['E']['unknown']);
+  })
+  .then(text => {
+   const status = (text.match(/probe_success (\d)/) || []);
+   const time = (text.match(/probe_duration_seconds ([\d\.]+)/) || []);
+   row(result, status[1], source.text, target, time[1]);
+  })
+  .catch(err => {
+   row(result, -1, source.text, target, err.message);
+  })
+  .finally(() => {
+   if (PROCS == 1) {
+    PROCS = 0;
+    document.getElementById("start").disabled = false;
+   }
+   else PROCS--;
+  });
+}
+
+function start() {
+ const sources = Array.from(document.getElementById("source").selectedOptions);
+ const targets = document.getElementById("target").value.split("\n");
+ const module = document.getElementById("module").value;
+ const report = document.getElementById("report");
+ report.innerHTML = "";
+ for(const source of sources) {
+  for(const target of targets) {
+   if(target.length < 1) continue;
+   const result = document.createElement("div");
+   report.appendChild(result);
+   row(result, -2, source.text, target, LANG['L']['running'] + "...");
+   probe(result, source, target, module);
+   PROCS++;
+  }
+ }
+ if(PROCS > 0) {
+  document.getElementById("start").disabled = true;
+ }
+}
+ </script>
+ <style>
+body {margin: 0px; font-family: monospace; background-color: #FDFDFD; color: #333333;}
+.title {font-size: 2rem;}
+.label {font-size: 1.2rem;}
+#ui {table-layout: fixed; text-align: center; }
+#source, #target, #module {display: inline-block; margin: 3px; padding: 0px;}
+#source, #target {height: 200px; width: 100%; border-width: 1px;}
+#module {width: 100px; margin-left: 12px;}
+.table {display: table; width: 700px; margin: 6px auto;}
+.row {display: table-row;}
+.head {background-color: #333333; color: #FDFDFD; text-align: center;}
+.success {background-color: #D4EDDA;}
+.fail {background-color: #F8D7DA;}
+.error {background-color: #FFF3CD;}
+.cell {display: table-cell; padding: 6px;}
+.footer {text-align: center; margin-top: 24px;}
+ </style>
+</head>
+<body onload="setup()">
+ <div class="title head">Fluke 📡</div>
+ <div id="ui" class="table">
+ <div class="row">
+  <div class="cell">
+   <div class="label">
+   </div><select id="source" multiple>
+   </select>
+  </div><div class="cell">
+   <div class="label">
+   </div><textarea id="target" placeholder="1.2.3.4:80&#10;example.com:443"></textarea>
+  </div>
+ </div>
+ <div class="row">
+  <div class="cell">
+   <label class="label">
+   </label><select id="module">
+   </select>
+  </div><div class="cell">
+   <button id="start" class="label" onclick="start()"></button>
+  </div>
+ </div>
+ </div>
+ <div id="report" class="table"></div>
+ <div class="footer">💾 BasileSoft</div>
+</body>
+</html>
