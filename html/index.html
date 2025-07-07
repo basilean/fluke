@@ -108,6 +108,8 @@ async function probe(result, source, target, module) {
   .then(text => {
    const status = (text.match(/probe_success (\d)/) || []);
    const time = (text.match(/probe_duration_seconds ([\d\.]+)/) || []);
+   const ip = (text.match(/probe_ip_addr_hash ([\d\.]+)/) || []);
+   // TODO: if ip == 9, resolve name error.
    row(result, status[1], source.text, target, time[1]);
   })
   .catch(err => {
