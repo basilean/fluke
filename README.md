@@ -1,6 +1,8 @@
 # Fluke
 A blackbox concentrator to check connections.
 
+![Fluke](fluke.png)
+
 ## Run Out of the Box Setup
 Clone this repository and move to new directory.
 ```bash
