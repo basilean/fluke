@@ -19,18 +19,20 @@ var CONFIG = {
 
 const LANG = {
  "E": {
-  "502": "Falla en el origen.",
+  "502": "Origen no responde.",
   "503": "Limite de consultas alcanzado.",
-  "unknown": "Error desconocido."
+  "unknown": "Error desconocido.",
+  "timeout": "Tiempo de espera expirado.",
+  "resolution": "Resolucion de nombre."
  },
  "L": {
   "source": "Origen",
   "target": "Destino",
   "module": "Modulo",
   "start": "Comenzar Prueba",
-  "running": "corriendo",
-  "success": "correcto",
-  "fail": "fallo",
+  "running": "corriendo...",
+  "ok": "correcto",
+  "fail": "falla",
   "error": "error"
  },
  "H": {
@@ -48,24 +50,6 @@ function option(value, text) {
  return `<option value="${value}">${text}</option>`;
 }
 
-function setup() {
- const sources = document.getElementById("source");
- for (const [value, text] of Object.entries(CONFIG['source'])) {
-  sources.insertAdjacentHTML('beforeend', option(value, text));
- }
- const modules = document.getElementById("module");
- for (const [value, text] of Object.entries(CONFIG['module'])) {
-  modules.insertAdjacentHTML('beforeend', option(value, text));
- }
- for (const [value, text] of Object.entries(LANG['H'])) {
-  document.getElementById(value).title = text;
- }
- document.getElementById("start").innerText = "🕒 " + LANG['L']['start'];
- document.getElementById("source").previousSibling.innerText = "🛰️ " + LANG['L']['source'];
- document.getElementById("target").previousSibling.innerText = "💻 " + LANG['L']['target'];
- document.getElementById("module").previousSibling.innerText = "⚙️ " + LANG['L']['module'];
-}
-
 function cell(icon, source, target, status, note) {
  return `<div class="cell">${icon}
 </div><div class="cell">${source}
@@ -75,29 +59,32 @@ function cell(icon, source, target, status, note) {
 </div>`;
 }
 
-function row(result, status, source, target, note) {
- result.classList.add("row");
- if (status == -2) {
-  result.innerHTML = cell("⚙️", source, target, "?", note);
+function setup() {
+ for (const [value, text] of Object.entries(LANG['H'])) {
+  document.getElementById(value).title = text;
  }
- else if (status == -1) {
-  result.innerHTML = cell("⚠️", source, target, LANG['L']['error'], note);
-  result.classList.add("error");
+ const sources = document.getElementById("source");
+ sources.previousSibling.innerText = "🛰️ " + LANG['L']['source'];
+ for (const [value, text] of Object.entries(CONFIG['source'])) {
+  sources.insertAdjacentHTML('beforeend', option(value, text));
  }
- else if (status == 0) {
-  result.innerHTML = cell("🛑", source, target, LANG['L']['fail'], "");
-  result.classList.add("fail");
+ const targets = document.getElementById("target");
+ target.previousSibling.innerText = "💻 " + LANG['L']['target'];
+ const modules = document.getElementById("module");
+ modules.previousSibling.innerText = "⚙️ " + LANG['L']['module'];
+ for (const [value, text] of Object.entries(CONFIG['module'])) {
+  modules.insertAdjacentHTML('beforeend', option(value, text));
  }
- else {
-  result.innerHTML = cell("🟢", source, target, LANG['L']['success'], Math.round(note * 1000) + "ms");
-  result.classList.add("success");
- }
+ const start = document.getElementById("start");
+ start.innerText = "🕒 " + LANG['L']['start'];
 }
 
 async function probe(result, source, target, module) {
  const cancel = new AbortController();
  const timeout = setTimeout(() => cancel.abort(), CONFIG['timeout']);
- fetch(source.value + '/probe?module=' + module + '&target=' + target, {signal: cancel.signal})
+ const url = source.value + '/probe?module=' + module + '&target=' + target;
+ const src = source.text;
+ fetch(url, {signal: cancel.signal})
   .then(reply => {
    clearTimeout(timeout);
    if (reply.ok) return reply.text();
@@ -106,14 +93,25 @@ async function probe(result, source, target, module) {
    else throw new Error(LANG['E']['unknown']);
   })
   .then(text => {
-   const status = (text.match(/probe_success (\d)/) || []);
-   const time = (text.match(/probe_duration_seconds ([\d\.]+)/) || []);
-   const ip = (text.match(/probe_ip_addr_hash ([\d\.]+)/) || []);
-   // TODO: if ip == 9, resolve name error.
-   row(result, status[1], source.text, target, time[1]);
+   const status = (text.match(/probe_success (\d)/) || [])[1];
+   var time = (text.match(/probe_duration_seconds ([\d\.]+)/) || [])[1];
+   time = Math.round(time * 1000);
+   const ip = (text.match(/probe_ip_addr_hash ([\d\.]+)/) || [])[1];
+   if (status > 0) {
+    result.innerHTML = cell("🟢", src, target, LANG['L']['ok'], time + "ms");
+    result.classList.add("success");
+   }
+   else {
+    var note = "";
+    if (time > 5000) note = LANG['E']['timeout'];
+    else if (ip == 0) note = LANG['E']['resolution'];
+    result.innerHTML = cell("🛑", src, target, LANG['L']['fail'], note);
+    result.classList.add("fail");
+   }
   })
   .catch(err => {
-   row(result, -1, source.text, target, err.message);
+   result.innerHTML = cell("⚠️", src, target, LANG['L']['error'], err.message);
+   result.classList.add("error");
   })
   .finally(() => {
    if (PROCS == 1) {
@@ -134,22 +132,21 @@ function start() {
   for(const target of targets) {
    if(target.length < 1) continue;
    const result = document.createElement("div");
+   result.classList.add("row");
+   result.innerHTML = cell("⚙️", source.text, target, "", LANG['L']['running']);
    report.appendChild(result);
-   row(result, -2, source.text, target, LANG['L']['running'] + "...");
    probe(result, source, target, module);
    PROCS++;
   }
  }
- if(PROCS > 0) {
-  document.getElementById("start").disabled = true;
- }
+ if(PROCS > 0) document.getElementById("start").disabled = true;
 }
  </script>
  <style>
 body {margin: 0px; font-family: monospace; background-color: #FDFDFD; color: #333333;}
 .title {font-size: 2rem;}
 .label {font-size: 1.2rem;}
-#ui {table-layout: fixed; text-align: center; }
+#ui {table-layout: fixed; text-align: center;}
 #source, #target, #module {display: inline-block; margin: 3px; padding: 0px;}
 #source, #target {height: 200px; width: 100%; border-width: 1px;}
 #module {width: 100px; margin-left: 12px;}
